@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Here & Now — Real‑Time Data + Location + Time</title>
+  <style>
+    /* ========== Minimal, clean styles (no external CSS needed) ========== */
+    :root { --pad: 14px; --radius: 14px; --maxw: 960px; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #0b1120; color: #e5e7eb; line-height: 1.45;
+    }
+    header {
+      background: linear-gradient(180deg, #111827, #0b1120);
+      padding: calc(var(--pad) * 1.5) var(--pad);
+      border-bottom: 1px solid #1f2937;
+    }
+    .wrap { max-width: var(--maxw); margin: 0 auto; }
+    h1 { margin: 0 0 6px; font-size: clamp(22px, 4vw, 34px); font-weight: 700; }
+    p.sub { margin: 0; color: #9ca3af; }
+    main { padding: var(--pad); }
+    .grid {
+      display: grid; gap: var(--pad);
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 720px) {
+      .grid { grid-template-columns: 1.1fr 1fr; }
+    }
+    .card {
+      background: #111827; border: 1px solid #1f2937; border-radius: var(--radius);
+      padding: var(--pad);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    }
+    .card h2 { margin: 0 0 6px; font-size: 18px; }
+    .muted { color: #9ca3af; font-size: 14px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .kpi {
+      flex: 1 1 140px; background: #0b1226; border: 1px solid #1f2a44; border-radius: 12px;
+      padding: 12px;
+    }
+    .kpi .label { color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    .kpi .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .small { font-size: 12px; color: #9ca3af; }
+    button, input[type="text"] {
+      border-radius: 10px; border: 1px solid #374151; background: #0f172a; color: #e5e7eb;
+      padding: 10px 12px; font: inherit;
+    }
+    button { cursor: pointer; }
+    .ok { border-color: #2563eb; }
+    .err { color: #f87171; }
+    footer { padding: var(--pad); color: #9ca3af; text-align: center; }
+    a { color: #93c5fd; }
+    code { background: #0b1226; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Here &amp; Now</h1>
+      <p class="sub">Real‑time JSON + Geolocation + Current Time (DES222 Week 4 practice)</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="grid">
+      <!-- LEFT: Status & Controls -->
+      <div class="card" id="statusCard" aria-live="polite">
+        <h2>Status</h2>
+        <p class="muted" id="status">Requesting your location…</p>
+
+        <div id="fallback" style="display:none; margin-top:10px">
+          <p class="muted">Location access denied? Enter a city to continue:</p>
+          <form id="cityForm" class="row" autocomplete="off">
+            <input id="cityInput" type="text" placeholder="e.g., Brisbane" aria-label="City" required />
+            <button class="ok" type="submit">Use this city</button>
+          </form>
+          <p class="small">Tip: You can re‑enable location in your browser and refresh.</p>
+        </div>
+      </div>
+
+      <!-- RIGHT: Live Time -->
+      <div class="card">
+        <h2>Current Time</h2>
+        <div class="row">
+          <div class="kpi">
+            <div class="label">Local Time</div>
+            <div class="value" id="clock">--:--:--</div>
+            <div class="small" id="tz">—</div>
+          </div>
+          <div class="kpi">
+            <div class="label">ISO Timestamp</div>
+            <div class="value" id="iso">—</div>
+            <div class="small">Useful for APIs</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Weather Card -->
+    <section style="margin-top: var(--pad);">
+      <div class="card" id="weatherCard">
+        <h2>Weather (Open‑Meteo JSON)</h2>
+        <p class="muted">Shows current conditions for your coordinates (or chosen city). We call <code>https://api.open-meteo.com/</code> and parse the JSON.</p>
+        <div class="row" style="margin-top:8px">
+          <div class="kpi">
+            <div class="label">Temperature</div>
+            <div class="value" id="temp">—</div>
+            <div class="small" id="unit">°C</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Wind Speed</div>
+            <div class="value" id="wind">—</div>
+            <div class="small">m/s</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Weather Code</div>
+            <div class="value" id="wcode">—</div>
+            <div class="small">WMO code</div>
+          </div>
+        </div>
+        <p class="small" id="where">—</p>
+        <pre class="small" id="raw" style="white-space:pre-wrap;"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Built for practice. Data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open‑Meteo</a>.
+  </footer>
+
+  <script>
+    // ========== 1) CLOCK: live time every second ==========
+    const clockEl = document.getElementById('clock');
+    const isoEl = document.getElementById('iso');
+    const tzEl = document.getElementById('tz');
+    function tick() {
+      const now = new Date();
+      clockEl.textContent = now.toLocaleTimeString();
+      isoEl.textContent = now.toISOString().slice(0,19).replace('T',' ');
+      tzEl.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+    tick(); setInterval(tick, 1000);
+
+    // ========== Helpers ==========
+    const statusEl = document.getElementById('status');
+    const fallback = document.getElementById('fallback');
+    const whereEl = document.getElementById('where');
+    const rawEl = document.getElementById('raw');
+    const tempEl = document.getElementById('temp');
+    const windEl = document.getElementById('wind');
+    const codeEl = document.getElementById('wcode');
+
+    function show(msg, type='') {
+      statusEl.textContent = msg;
+      statusEl.className = type === 'error' ? 'err' : 'muted';
+    }
+
+    // ========== 2) FETCH WEATHER FROM OPEN‑METEO ==========
+    async function fetchWeather(lat, lon, label='Your location') {
+      show(`Fetching weather for ${label}…`);
+      // Open‑Meteo current_weather endpoint; no API key needed
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`API error ${r.status}`);
+      const json = await r.json();
+
+      // Unpack JSON
+      const cw = json.current_weather;  // { temperature, windspeed, weathercode, ... }
+      tempEl.textContent = `${cw.temperature}`;
+      windEl.textContent = `${cw.windspeed}`;
+      codeEl.textContent = `${cw.weathercode}`;
+      whereEl.textContent = `Coords: ${lat.toFixed(4)}, ${lon.toFixed(4)} — Source: Open‑Meteo current_weather`;
+      rawEl.textContent = JSON.stringify(cw, null, 2);
+      show('Done ✓');
+    }
+
+    // ========== 3) TRY BROWSER GEOLOCATION WITH TIMEOUT ==========
+    function getPositionWithTimeout(ms=8000) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Geolocation timed out'));
+          }
+        }, ms);
+
+        navigator.geolocation.getCurrentPosition(
+          pos => { if (!settled) { settled = true; clearTimeout(timer); resolve(pos); } },
+          err => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } },
+          { enableHighAccuracy: true, timeout: ms, maximumAge: 0 }
+        );
+      });
+    }
+
+    async function init() {
+      if (!('geolocation' in navigator)) {
+        show('Geolocation not supported. Use the city fallback.', 'error');
+        fallback.style.display = 'block';
+        return;
+      }
+      try {
+        const pos = await getPositionWithTimeout(8000);
+        const { latitude, longitude } = pos.coords;
+        show(`Location OK. Lat ${latitude.toFixed(4)}, Lon ${longitude.toFixed(4)}.`);
+        await fetchWeather(latitude, longitude);
+      } catch (e) {
+        // Permission denied OR timeout → show fallback city form
+        show(`Could not get location (${e.message}). You can enter a city instead.`, 'error');
+        fallback.style.display = 'block';
+      }
+    }
+
+    // ========== 4) CITY FALLBACK (simple free geocoding via Open‑Meteo) ==========
+    document.getElementById('cityForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const q = document.getElementById('cityInput').value.trim();
+      if (!q) return;
+      show(`Looking up "${q}"…`);
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1`;
+      const r = await fetch(geoUrl);
+      if (!r.ok) { show('City lookup failed', 'error'); return; }
+      const g = await r.json();
+      if (!g.results || !g.results.length) {
+        show('No results. Check spelling or try a larger city.', 'error');
+        return;
+      }
+      const { latitude, longitude, name, country } = g.results[0];
+      await fetchWeather(latitude, longitude, `${name}, ${country}`);
+    });
+
+    // Start!
+    init();
+  </script>
+</body>
+</html>
